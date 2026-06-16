@@ -27,7 +27,7 @@ What Spotify *does* expose via the **Web API**:
 
 | Layer | Technology | Why |
 |---|---|---|
-| **Frontend** | React (Vite) | Fast, lightweight, great auth flow handling |
+| **Frontend** | React (Next.JS) | Fast, lightweight, great auth flow handling |
 | **Backend** | Node.js + Express | JavaScript end-to-end, easy Spotify SDK use |
 | **Database** | PostgreSQL via Supabase (free tier) | Stores listen events, user tokens, rules |
 | **Auth** | Spotify OAuth 2.0 (PKCE flow) | Required by Spotify; tokens stored in backend |
@@ -216,17 +216,21 @@ Song C is now playing live → track via progress_ms instead
 - [ ] Update `last_poll_at` on users table after each cycle
 
 ### Phase 3 — Frontend
-- [ ] Build React app with Vite
-- [ ] Landing page + OAuth redirect
+- [ ] Scaffold Next.js app (`npx create-next-app@latest`)
+- [ ] Landing page + OAuth redirect (link to backend `/auth/spotify`)
 - [ ] Dashboard with live "now playing" state
 - [ ] Settings form (threshold, lookback)
 - [ ] Removal history table with undo button
+- [ ] Use `NEXT_PUBLIC_API_BASE_URL` to point all client-side fetch calls at the Express backend
 
 ### Phase 4 — Polish & Deploy
-- [ ] Deploy frontend to Vercel
+- [ ] Run `next build` locally to verify no build errors before deploying
+- [ ] Deploy frontend to Vercel (connect GitHub repo; Vercel auto-detects Next.js)
 - [ ] Deploy backend to Railway or Render
-- [ ] Set environment variables: `SPOTIFY_CLIENT_ID`, `SPOTIFY_CLIENT_SECRET`, `DATABASE_URL`, `JWT_SECRET`
-- [ ] Configure Spotify redirect URI in dashboard to match production URL
+- [ ] Set environment variables in Vercel: `NEXT_PUBLIC_API_BASE_URL`, `NEXT_PUBLIC_SPOTIFY_CLIENT_ID`
+- [ ] Set environment variables in Railway/Render: `SPOTIFY_CLIENT_ID`, `SPOTIFY_CLIENT_SECRET`, `DATABASE_URL`, `JWT_SECRET`, `ENCRYPTION_KEY`
+- [ ] Configure Spotify redirect URI in dashboard to point to the **backend** callback: `https://your-backend.railway.app/auth/callback`
+  - Note: OAuth exchange happens server-side on the Express backend, not via a Next.js API route, so the redirect URI stays on Railway/Render
 - [ ] Test full flow end-to-end
 - [ ] Add token refresh handling edge cases
 - [ ] Add error handling for Spotify rate limits (429 responses)
@@ -270,9 +274,9 @@ DATABASE_URL=postgresql://...
 JWT_SECRET=
 ENCRYPTION_KEY=         # for encrypting tokens at rest
 
-# Frontend
-VITE_API_BASE_URL=https://your-backend.railway.app
-VITE_SPOTIFY_CLIENT_ID=
+# Frontend (NEXT_PUBLIC_ prefix required for browser-accessible vars in Next.js)
+NEXT_PUBLIC_API_BASE_URL=https://your-backend.railway.app
+NEXT_PUBLIC_SPOTIFY_CLIENT_ID=
 ```
 
 ---
