@@ -1,0 +1,19 @@
+{
+  "enabled": true,
+  "name": "Auto-Generate Tests for New Service Files",
+  "description": "Automatically generates test files when a new service file is created in the project",
+  "version": "1",
+  "when": {
+    "type": "fileCreated",
+    "patterns": [
+      "**/*.service.js",
+      "**/*.service.ts",
+      "**/services/*.js",
+      "**/services/*.ts"
+    ]
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "A new service file has been created. Please auto-generate a corresponding test file for it with appropriate unit tests covering the main functionality, edge cases, and error handling."
+  }
+}

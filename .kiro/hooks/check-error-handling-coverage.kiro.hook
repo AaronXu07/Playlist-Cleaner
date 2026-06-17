@@ -1,0 +1,21 @@
+{
+  "enabled": true,
+  "name": "Check Error Handling Coverage",
+  "description": "Reviews error handling coverage in routes and services after any changes, ensuring all async operations, external calls, and failure paths are properly handled.",
+  "version": "1",
+  "when": {
+    "type": "fileEdited",
+    "patterns": [
+      "**/routes/**/*.js",
+      "**/routes/**/*.ts",
+      "**/services/**/*.js",
+      "**/services/**/*.ts",
+      "**/controllers/**/*.js",
+      "**/controllers/**/*.ts"
+    ]
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "A route or service file was just saved. Review the changed file for error handling coverage. Check for: unhandled promise rejections (async functions missing try/catch or .catch()), missing error responses in route handlers (e.g., no 4xx/5xx responses for failure cases), external API or database calls without error handling, missing validation error handling, and any thrown errors that aren't caught upstream. If gaps are found, suggest specific fixes. If error handling looks complete, confirm coverage is adequate."
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "enabled": true,
+  "name": "Auto-Update Removal Log Schema",
+  "description": "Automatically updates the removal log schema whenever data model files change, keeping the log schema in sync with the data model.",
+  "version": "1",
+  "when": {
+    "type": "fileEdited",
+    "patterns": [
+      "**/*.js",
+      "**/*.ts",
+      "**/*.jsx",
+      "**/*.tsx",
+      "**/*.json",
+      "**/*.sql"
+    ]
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "A file was just saved. Check if it contains data model changes (e.g., new fields, renamed properties, removed fields, schema migrations, or type definition updates). If data model changes are detected, locate the removal log schema in the codebase and update it to reflect the new data model structure. Ensure field names, types, and any relevant metadata in the removal log schema stay in sync with the updated model. If no data model changes are present, skip this check."
+  }
+}

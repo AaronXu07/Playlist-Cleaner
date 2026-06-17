@@ -1,0 +1,19 @@
+{
+  "enabled": true,
+  "name": "Validate Polling Logic on Save",
+  "description": "Checks polling logic for edge cases (empty results, timeouts, race conditions, max retries) whenever a file is saved.",
+  "version": "1",
+  "when": {
+    "type": "fileEdited",
+    "patterns": [
+      "**/*.js",
+      "**/*.ts",
+      "**/*.jsx",
+      "**/*.tsx"
+    ]
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "A file was just saved. Review the saved file for any polling logic (e.g., setInterval, setTimeout, retry loops, polling functions). If polling logic is present, validate it against common edge cases including: empty or null results, network timeouts, race conditions, exceeding max retry limits, backoff strategies, and cleanup on component unmount or process exit. If issues are found, suggest fixes. If no polling logic is present, skip this check."
+  }
+}
