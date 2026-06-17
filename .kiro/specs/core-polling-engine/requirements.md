@@ -6,7 +6,7 @@ The Core Polling Engine is the background service responsible for continuously m
 
 The engine sits at the heart of the Spotify Playlist Cleaner. Phase 1 already handles authentication, token storage, and the Supabase database. This phase wires the background loop, the listen-event pipeline, the skip-detection query, and the removal action together into a working system.
 
-> **Skip threshold (v1):** A track is removed when its 2 most-recent listen events for a given `(user_id, track_id, playlist_id)` triple are all skips (`listened_pct < 0.10`). The lookback window is fixed at 2 events for v1; the plan document references "last 3 listens" as a future user-configurable default, but the implemented v1 threshold is 2/2.
+> **Skip threshold (v1):** A track is removed when its 2 most-recent listen events for a given `(user_id, track_id, playlist_id)` triple are all skips (`listened_pct < 0.25`). The lookback window is fixed at 2 events for v1; the plan document references "last 3 listens" as a future user-configurable default, but the implemented v1 threshold is 2/2.
 
 ### Scope Boundaries
 
@@ -14,7 +14,7 @@ The following are explicitly out of scope for v1:
 
 - **Multi-device conflict resolution**: the Spotify API returns the most-recently-active device; the engine tracks whatever `currently-playing` returns without attempting device disambiguation.
 - **Spotify Group Session / Jam sessions**: playback controlled by other users in a jam is not distinguishable via the API; the engine tracks the playback stream as-is.
-- **Per-playlist or per-user skip thresholds**: the threshold (10%, 2 listens) is global for v1.
+- **Per-playlist or per-user skip thresholds**: the threshold (25%, 2 listens) is global for v1.
 - **Event severity weighting**: a 0% listen and a 9% listen are both treated as skips equally.
 - **Crossfade handling**: the engine uses `track_id` changes as the song-change signal; crossfade creates a small window of ambiguity that is accepted.
 - **Backwards scrubbing**: `max_progress_ms` only monotonically increases, so scrubbing back has no effect on the recorded `listened_pct`.
@@ -24,7 +24,7 @@ The following are explicitly out of scope for v1:
 - **Scalability beyond ~100 concurrent users**: the `setInterval`-per-user model is adequate for personal/small-scale use; BullMQ migration is a future enhancement.
 - **Thundering herd mitigation beyond staggering**: poll intervals are staggered by a Stagger_Offset (0–5 s random delay per user at engine startup); no further coordination is needed for v1. See Requirement 1, AC 10.
 - **Encryption key rotation**: out of scope for v1; requires a migration script not part of this phase.
-- **User-configurable skip threshold / lookback window**: the threshold is global and fixed at `listened_pct < 0.10` / 2-of-2 events for v1. Settings UI is a future phase.
+- **User-configurable skip threshold / lookback window**: the threshold is global and fixed at `listened_pct < 0.25` / 2-of-2 events for v1. Settings UI is a future phase.
 - **Health/keepalive endpoint**: an HTTP `/health` ping route to prevent Render/Railway free-tier sleep is outside the scope of the polling engine itself (handled at the Express layer).
 
 ---
@@ -46,7 +46,7 @@ The following are explicitly out of scope for v1:
 - **removal_log**: Supabase table recording removed tracks with fields: `id`, `user_id`, `track_id`, `playlist_id`, `track_name`, `removed_at`, `reason`.
 - **users**: Supabase table with fields: `id`, `spotify_id`, `access_token` (encrypted), `refresh_token` (encrypted), `token_expires_at`, `last_poll_at`, `created_at`.
 - **listened_pct**: A float from 0.0 to 1.0 representing the fraction of a track's duration that was listened to.
-- **was_skipped**: Boolean; `true` when `listened_pct < 0.10`.
+- **was_skipped**: Boolean; `true` when `listened_pct < 0.25`.
 - **source**: One of three values: `"live"` (derived from real-time `progress_ms` tracked across polls), `"recent"` (estimated from timestamp gaps in recently-played), or `"delta"` (inferred from a playback position discontinuity — the track changed or vanished before accumulating enough progress to appear in recently-played).
 - **last_poll_at**: The timestamp stored on the `users` row indicating when the most recent Poll_Cycle completed; used as the cutoff for reconciling recently-played data.
 - **playlist context**: A Spotify `context.uri` that begins with `spotify:playlist:`. Events from non-playlist contexts (albums, artists, liked songs) are ignored.
@@ -137,7 +137,7 @@ The following are explicitly out of scope for v1:
 
 1. WHEN THE Listen_Event_Writer is about to insert a recently-played-derived (`source = "recent"`) or delta-inferred (`source = "delta"`) listen event, it SHALL check whether a row with the exact same `(user_id, track_id, listened_at)` — using timestamp equality with no tolerance window — already exists in the `listen_events` table, regardless of the existing row's `source` value.
 2. IF a matching row already exists (regardless of its `source`), THEN THE Listen_Event_Writer SHALL write no row to `listen_events` and raise no error. A `source = "live"` or `source = "recent"` event is always treated as authoritative over a `source = "delta"` event for the same `(user_id, track_id, listened_at)`.
-3. WHEN a listen event is inserted, THE Listen_Event_Writer SHALL set `was_skipped = true` if `listened_pct < 0.10`, and `was_skipped = false` if `listened_pct >= 0.10`.
+3. WHEN a listen event is inserted, THE Listen_Event_Writer SHALL set `was_skipped = true` if `listened_pct < 0.25`, and `was_skipped = false` if `listened_pct >= 0.25`.
 4. IF `listened_pct` is null or outside the range [0.0, 1.0] at the time of insert, THEN THE Listen_Event_Writer SHALL discard the event, write no row to `listen_events`, and log an error.
 5. IF the database INSERT for a listen event fails, THEN THE Listen_Event_Writer SHALL log the error including the `(user_id, track_id, listened_at)` and take no further action for that event. THE Polling_Engine SHALL NOT retry the insert to avoid double-counting on the next cycle.
 

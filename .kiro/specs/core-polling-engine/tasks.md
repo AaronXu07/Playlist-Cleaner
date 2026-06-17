@@ -105,7 +105,7 @@ All code uses ES Module syntax (`import`/`export`), JavaScript (no TypeScript), 
   - [ ] 5.7 Implement `writeListenEvent(event)` — Listen_Event_Writer
     - Validate `listened_pct` is a number in `[0.0, 1.0]`; log and discard if not (Req 5.4)
     - Check dedup: query `SELECT id FROM listen_events WHERE user_id = $1 AND track_id = $2 AND listened_at = $3`; if exists → return without inserting (Req 5.1, 5.2)
-    - Set `was_skipped = listened_pct < 0.10`
+    - Set `was_skipped = listened_pct < 0.25`
     - Apply `source = "delta"` override if `listened_pct < 0.50` and source was `"live"` (Req 4.8)
     - `INSERT INTO listen_events (user_id, track_id, playlist_id, listened_pct, was_skipped, source, listened_at)`; on DB error: log `(user_id, track_id, listened_at)`, do not retry (Req 5.5)
     - Return `true` if inserted, `false` if skipped
@@ -300,12 +300,12 @@ All code uses ES Module syntax (`import`/`export`), JavaScript (no TypeScript), 
     - **Property 11: Idempotent listen event writes**
     - **Validates: Requirements 5.1, 5.2**
 
-  - [ ]* 15.4 Write property test: was_skipped = (listened_pct < 0.10) (Property 12)
+  - [ ]* 15.4 Write property test: was_skipped = (listened_pct < 0.25) (Property 12)
     - File: `src/__tests__/poller.test.js`
     - Use `fc.float({ min: 0, max: 1 })` for `listened_pct`
     - Call `writeListenEvent` and capture the row passed to the Supabase insert
-    - Assert `was_skipped === (listened_pct < 0.10)` for all inputs
-    - Tag: `// Feature: core-polling-engine, Property 12: was_skipped = (listened_pct < 0.10) for all inserted listen events`
+    - Assert `was_skipped === (listened_pct < 0.25)` for all inputs
+    - Tag: `// Feature: core-polling-engine, Property 12: was_skipped = (listened_pct < 0.25) for all inserted listen events`
     - **Property 12: was_skipped flag**
     - **Validates: Requirements 5.3**
 

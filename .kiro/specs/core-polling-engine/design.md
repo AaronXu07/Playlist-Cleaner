@@ -253,7 +253,7 @@ CREATE TABLE listen_events (
   track_id     TEXT NOT NULL,              -- Spotify track ID (no "spotify:track:" prefix)
   playlist_id  TEXT NOT NULL,             -- Spotify playlist ID
   listened_pct NUMERIC(5,4) NOT NULL,     -- 0.0000 – 1.0000
-  was_skipped  BOOLEAN NOT NULL,          -- listened_pct < 0.10
+  was_skipped  BOOLEAN NOT NULL,          -- listened_pct < 0.25
   source       TEXT NOT NULL              -- "live" | "recent" | "delta"
                  CHECK (source IN ('live','recent','delta')),
   listened_at  TIMESTAMPTZ NOT NULL,
@@ -346,7 +346,7 @@ runPollCycle(userId)
   │     writeListenEvent(event)
   │       ├─ validate listened_pct in [0.0, 1.0]
   │       ├─ check UNIQUE(user_id, track_id, listened_at) — skip if exists
-  │       ├─ set was_skipped = (listened_pct < 0.10)
+  │       ├─ set was_skipped = (listened_pct < 0.25)
   │       ├─ apply source = "delta" override if listened_pct < 0.50 and source was "live"
   │       └─ INSERT INTO listen_events
   │
@@ -502,9 +502,9 @@ State: TRACKING
 
 ---
 
-### Property 12: was_skipped = (listened_pct < 0.10) for all inserted listen events
+### Property 12: was_skipped = (listened_pct < 0.25) for all inserted listen events
 
-*For any* listen event with `listened_pct` in `[0.0, 1.0]`, the value of `was_skipped` stored in `listen_events` SHALL be `true` if and only if `listened_pct < 0.10`, and `false` if `listened_pct >= 0.10`.
+*For any* listen event with `listened_pct` in `[0.0, 1.0]`, the value of `was_skipped` stored in `listen_events` SHALL be `true` if and only if `listened_pct < 0.25`, and `false` if `listened_pct >= 0.25`.
 
 **Validates: Requirements 5.3**
 
@@ -622,7 +622,7 @@ Properties to implement as PBT:
 | 9 — maxProgressMs is running max | `poller.test.js` | `fc.array(fc.integer({ min: 0, max: 600000 }), { minLength: 1 })` |
 | 10 — Delta source iff listened_pct < 0.50 | `poller.test.js` | `fc.float({ min: 0, max: 1 })` |
 | 11 — Idempotent listen event writes | `poller.test.js` | `fc.record({ user_id: fc.uuid(), track_id: fc.string(), listened_at: fc.date(), listened_pct: fc.float({ min: 0, max: 1 }) })` |
-| 12 — was_skipped = listened_pct < 0.10 | `poller.test.js` | `fc.float({ min: 0, max: 1 })` |
+| 12 — was_skipped = listened_pct < 0.25 | `poller.test.js` | `fc.float({ min: 0, max: 1 })` |
 | 13 — Skip detection trigger condition | `poller.test.js` | `fc.array(fc.record({ was_skipped: fc.boolean() }), { minLength: 0, maxLength: 5 })` |
 | 14 — Re-add history cutoff | `poller.test.js` | `fc.array(fc.record({ listened_at: fc.date(), was_skipped: fc.boolean() }))`, `fc.date()` |
 | 15 — last_poll_at = cycleStart | `poller.test.js` | `fc.uuid()`, random cycle outcomes |
