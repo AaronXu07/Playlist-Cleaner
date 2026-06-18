@@ -2,6 +2,8 @@ import 'dotenv/config'
 import express from 'express'
 import cookieParser from 'cookie-parser'
 import authRoutes from './routes/auth.js'
+import apiRoutes from './routes/api.js'
+import { startPollingEngine } from './lib/poller.js'
 
 const app = express()
 const PORT = process.env.PORT || 3000
@@ -19,10 +21,12 @@ app.use((req, res, next) => {
 
 // Routes
 app.use('/auth', authRoutes)
+app.use('/api', apiRoutes)
 
 // Health check
 app.get('/health', (req, res) => res.json({ status: 'ok' }))
 
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
   console.log(`Server running on http://127.0.0.1:${PORT}`)
+  await startPollingEngine()
 })

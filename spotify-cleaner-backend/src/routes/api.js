@@ -1,0 +1,145 @@
+import express from 'express'
+import requireAuth from '../middleware/auth.js'
+import getSupabase from '../lib/supabase.js'
+import { addTrackToPlaylist, refreshTokenIfNeeded } from '../lib/spotify.js'
+import { userState } from '../lib/poller.js'
+
+const router = express.Router()
+
+// ---------------------------------------------------------------------------
+// Task 8.1 — GET /api/removals
+// List the 50 most recent removal log entries for the authenticated user.
+// Requirements: 7.2
+// ---------------------------------------------------------------------------
+router.get('/removals', requireAuth, async (req, res) => {
+  const supabase = getSupabase()
+
+  const { data, error } = await supabase
+    .from('removal_log')
+    .select('*')
+    .eq('user_id', req.user.userId)
+    .order('removed_at', { ascending: false })
+    .limit(50)
+
+  if (error) {
+    console.error('[api] GET /removals error:', error.message)
+    return res.status(500).json({ error: 'Failed to fetch removals' })
+  }
+
+  return res.json(data)
+})
+
+// ---------------------------------------------------------------------------
+// Task 8.2 — DELETE /api/removals/:id
+// Undo a removal: re-add the track to its playlist and delete the log entry.
+// Requirements: 7.2
+// ---------------------------------------------------------------------------
+router.delete('/removals/:id', requireAuth, async (req, res) => {
+  const supabase = getSupabase()
+  const { id } = req.params
+  const { userId } = req.user
+
+  // Fetch the removal_log row, enforcing ownership.
+  const { data: rows, error: fetchError } = await supabase
+    .from('removal_log')
+    .select('*')
+    .eq('id', id)
+    .eq('user_id', userId)
+    .limit(1)
+
+  if (fetchError) {
+    console.error('[api] DELETE /removals/:id fetch error:', fetchError.message)
+    return res.status(500).json({ error: 'Failed to fetch removal record' })
+  }
+
+  if (!rows || rows.length === 0) {
+    return res.status(404).json({ error: 'Removal record not found' })
+  }
+
+  const row = rows[0]
+
+  try {
+    // Load user tokens from DB.
+    const { data: userRows, error: userError } = await supabase
+      .from('users')
+      .select('id, access_token, refresh_token, token_expires_at')
+      .eq('id', userId)
+      .limit(1)
+
+    if (userError || !userRows || userRows.length === 0) {
+      throw new Error('Could not load user record')
+    }
+
+    const user = userRows[0]
+
+    // Refresh token if needed, get plaintext access token.
+    const { accessToken } = await refreshTokenIfNeeded(user)
+
+    // Re-add the track to the playlist via Spotify API.
+    await addTrackToPlaylist(accessToken, row.playlist_id, `spotify:track:${row.track_id}`)
+
+    // Delete the removal_log row now that the track has been re-added.
+    const { error: deleteError } = await supabase
+      .from('removal_log')
+      .delete()
+      .eq('id', id)
+      .eq('user_id', userId)
+
+    if (deleteError) {
+      console.error('[api] DELETE /removals/:id delete log error:', deleteError.message)
+      return res.status(500).json({ error: 'Track re-added but failed to delete removal record' })
+    }
+
+    return res.status(204).send()
+  } catch (err) {
+    console.error('[api] DELETE /removals/:id error:', err.message)
+    return res.status(500).json({ error: 'Failed to undo removal' })
+  }
+})
+
+// ---------------------------------------------------------------------------
+// Task 8.3 — GET /api/events
+// List the 100 most recent listen events for the authenticated user.
+// Requirements: 5.1
+// ---------------------------------------------------------------------------
+router.get('/events', requireAuth, async (req, res) => {
+  const supabase = getSupabase()
+
+  const { data, error } = await supabase
+    .from('listen_events')
+    .select('*')
+    .eq('user_id', req.user.userId)
+    .order('listened_at', { ascending: false })
+    .limit(100)
+
+  if (error) {
+    console.error('[api] GET /events error:', error.message)
+    return res.status(500).json({ error: 'Failed to fetch listen events' })
+  }
+
+  return res.json(data)
+})
+
+// ---------------------------------------------------------------------------
+// Task 8.4 — GET /api/status
+// Return the current in-memory polling state for the authenticated user.
+// Requirements: 1.9, 13.1
+// ---------------------------------------------------------------------------
+router.get('/status', requireAuth, (req, res) => {
+  const state = userState.get(req.user.userId)
+
+  if (!state) {
+    return res.json({ registered: false })
+  }
+
+  const { isRunning, consecutive204s, reducedMode, liveTrack } = state
+
+  return res.json({
+    isRunning,
+    consecutive204s,
+    reducedMode,
+    hasLiveTrack: !!liveTrack,
+  })
+})
+
+export default router
