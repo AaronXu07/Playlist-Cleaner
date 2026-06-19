@@ -2,7 +2,7 @@ import express from 'express'
 import requireAuth from '../middleware/auth.js'
 import getSupabase from '../lib/supabase.js'
 import { addTrackToPlaylist, refreshTokenIfNeeded } from '../lib/spotify.js'
-import { userState } from '../lib/poller.js'
+import { userState, registerUser, deregisterUser } from '../lib/poller.js'
 
 const router = express.Router()
 
@@ -140,6 +140,50 @@ router.get('/status', requireAuth, (req, res) => {
     reducedMode,
     hasLiveTrack: !!liveTrack,
   })
+})
+
+// ---------------------------------------------------------------------------
+// POST /api/polling/start — register (or re-register) the user with the
+// polling engine so automatic playlist cleaning is active.
+// ---------------------------------------------------------------------------
+router.post('/polling/start', requireAuth, async (req, res) => {
+  const { userId } = req.user
+  const supabase = getSupabase()
+
+  const { error } = await supabase
+    .from('users')
+    .update({ polling_enabled: true })
+    .eq('id', userId)
+
+  if (error) {
+    console.error('[api] POST /polling/start db error:', error.message)
+    return res.status(500).json({ error: 'Failed to update polling state' })
+  }
+
+  registerUser(userId)
+  return res.json({ polling: true })
+})
+
+// ---------------------------------------------------------------------------
+// POST /api/polling/stop — deregister the user from the polling engine so
+// no further monitoring or removals happen until they start again.
+// ---------------------------------------------------------------------------
+router.post('/polling/stop', requireAuth, async (req, res) => {
+  const { userId } = req.user
+  const supabase = getSupabase()
+
+  const { error } = await supabase
+    .from('users')
+    .update({ polling_enabled: false })
+    .eq('id', userId)
+
+  if (error) {
+    console.error('[api] POST /polling/stop db error:', error.message)
+    return res.status(500).json({ error: 'Failed to update polling state' })
+  }
+
+  deregisterUser(userId)
+  return res.json({ polling: false })
 })
 
 export default router

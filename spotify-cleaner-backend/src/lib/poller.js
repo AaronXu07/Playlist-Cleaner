@@ -714,6 +714,7 @@ export async function startPollingEngine() {
     .from('users')
     .select('id')
     .not('refresh_token', 'is', null)
+    .eq('polling_enabled', true)
 
   if (error) {
     console.error('[poller] Failed to load users at startup:', error.message)

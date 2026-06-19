@@ -3,7 +3,7 @@ import axios from 'axios'
 import jwt from 'jsonwebtoken'
 import getSupabase from '../lib/supabase.js'
 import { encrypt, decrypt } from '../lib/crypto.js'
-import { registerUser } from '../lib/poller.js'
+import { registerUser, deregisterUser } from '../lib/poller.js'
 
 const router = Router()
 
@@ -161,6 +161,15 @@ router.get('/me', (req, res) => {
 
 // ─── POST /auth/logout ─────────────────────────────────────────────────────
 router.post('/logout', (req, res) => {
+  const token = req.cookies?.session
+  if (token) {
+    try {
+      const payload = jwt.verify(token, process.env.JWT_SECRET)
+      deregisterUser(payload.userId)
+    } catch {
+      // expired/invalid token — nothing to deregister
+    }
+  }
   res.clearCookie('session')
   res.json({ success: true })
 })
