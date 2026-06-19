@@ -17,30 +17,11 @@ const SCOPES = [
 
 // ─── Step 1: Redirect user to Spotify login ────────────────────────────────
 router.get('/spotify', (req, res) => {
-  // Force Spotify to always show the consent dialog (show_dialog: 'true').
-  //
-  // WHY (stale-token re-consent — playlist 403 / missing-scope fix):
-  // The SCOPES list above is already correct and includes the
-  // playlist-modify-public / playlist-modify-private write scopes. The defect
-  // is NOT a missing scope in the request — it is stale stored tokens. Users
-  // who authorized BEFORE the playlist-modify scopes were added still hold
-  // tokens minted without write scope. With the old `show_dialog: 'false'`,
-  // Spotify silently re-issued a token using the previously-granted scopes
-  // (skipping consent), so those users were never re-prompted and their tokens
-  // never gained write scope. Their playlist-removal calls then return a
-  // generic 403 ("Forbidden").
-  //
-  // Setting show_dialog to 'true' forces the consent screen every time, so any
-  // user flagged for re-auth (see `usersNeedingReauth` in src/lib/poller.js)
-  // who hits /auth/spotify is guaranteed to re-consent and have a fresh token
-  // minted with the current SCOPES (including write scope). This does not break
-  // first-time auth — new users are shown the consent screen regardless.
   const params = new URLSearchParams({
     client_id: process.env.SPOTIFY_CLIENT_ID,
     response_type: 'code',
     redirect_uri: process.env.SPOTIFY_REDIRECT_URI,
     scope: SCOPES,
-    show_dialog: 'true', // re-consent for stale, scope-less tokens (403 fix)
   })
 
   res.redirect(`https://accounts.spotify.com/authorize?${params}`)
