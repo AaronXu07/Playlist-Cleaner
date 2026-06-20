@@ -595,10 +595,16 @@ export async function runPollCycle(userId) {
       throw err
     }
 
-    // Parallel fetch
+    // Increment cycle counter and decide whether to fetch recently-played.
+    // /recently-played only updates when a track finishes, so every 3rd cycle
+    // (~60s) is sufficient and avoids hammering the rate limit.
+    state.pollCount = (state.pollCount ?? 0) + 1
+    const fetchRecentlyPlayed = state.pollCount % 3 === 0
+
+    // Parallel fetch — recently-played only on every 3rd cycle
     const [cpResult, rpItems] = await Promise.all([
       getCurrentlyPlaying(accessToken, userId),
-      getRecentlyPlayed(accessToken, userId),
+      fetchRecentlyPlayed ? getRecentlyPlayed(accessToken, userId) : Promise.resolve([]),
     ])
 
     // Process live track state machine
@@ -671,14 +677,15 @@ export function registerUser(userId) {
     consecutive204s: 0,
     reducedMode: false,
     liveTrack: null,
+    pollCount: 0,
   }
   userState.set(userId, state)
 
   // Stagger_Offset: uniformly random in [0, 5000] ms (Req 1.10).
   const staggerMs = Math.floor(Math.random() * 5001)
 
-  // Fixed 10 000 ms interval.
-  const interval = 10000
+  // 20 000 ms interval — reduced from 10 000 ms to avoid Spotify rate limits.
+  const interval = 20000
 
   setTimeout(() => {
     const intervalId = setInterval(() => runPollCycle(userId), interval)
