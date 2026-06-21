@@ -228,6 +228,78 @@ export async function getRecentlyPlayed(accessToken, userId) {
 }
 
 // ---------------------------------------------------------------------------
+// getTracksDetails(accessToken, trackIds)
+// ---------------------------------------------------------------------------
+
+/**
+ * GET /v1/tracks/{id}  (one request per track, run in parallel with capped concurrency)
+ *
+ * Resolves Spotify track IDs to display metadata: track name, primary artist
+ * name, and a small album-art URL. Used to enrich removal_log rows (which only
+ * store the track ID) for the dashboard "Removed Songs" list.
+ *
+ * Note: The batch endpoint GET /v1/tracks?ids=... was removed in the Spotify
+ * February 2026 Dev Mode update. Individual requests are now required.
+ *
+ * Returns a Map<trackId, { name, artist, albumArt }>. Never throws — on error
+ * it logs and returns whatever has been resolved so far.
+ *
+ * @param {string} accessToken  - plaintext Spotify access token
+ * @param {string[]} trackIds   - Spotify track IDs (no "spotify:track:" prefix)
+ * @returns {Promise<Map<string, { name: string, artist: string, albumArt: string|null }>>}
+ */
+export async function getTracksDetails(accessToken, trackIds) {
+  const result = new Map()
+
+  // Deduplicate and drop falsy IDs.
+  const uniqueIds = [...new Set(trackIds.filter(Boolean))]
+  if (uniqueIds.length === 0) return result
+
+  const headers = { Authorization: `Bearer ${accessToken}` }
+
+  // Fetch tracks in parallel, capped at 5 concurrent requests to avoid
+  // hammering the rate limit (removal_log is capped at 50 rows anyway).
+  const CONCURRENCY = 5
+
+  for (let i = 0; i < uniqueIds.length; i += CONCURRENCY) {
+    const chunk = uniqueIds.slice(i, i + CONCURRENCY)
+
+    await Promise.all(
+      chunk.map(async (trackId) => {
+        // market=from_token resolves the track in the user's own market.
+        const url = `https://api.spotify.com/v1/tracks/${encodeURIComponent(trackId)}?market=from_token`
+        try {
+          const response = await getWithRateLimitRetry(url, headers)
+          const track = response?.data
+          if (!track || !track.id) return
+
+          const albumImages = track.album?.images ?? []
+          // Prefer the smallest image (images are ordered largest-first).
+          const albumArt = albumImages.length > 0
+            ? albumImages[albumImages.length - 1].url
+            : null
+          const artist = (track.artists ?? []).map((a) => a.name).join(', ')
+
+          result.set(track.id, {
+            name: track.name ?? track.id,
+            artist,
+            albumArt,
+          })
+        } catch (err) {
+          const status = err?.response?.status
+          console.error(
+            `[spotify] getTracksDetails error for track ${trackId}: HTTP ${status ?? 'unknown'} — ${err.message}`
+          )
+          // Continue — other tracks in the chunk are unaffected.
+        }
+      })
+    )
+  }
+
+  return result
+}
+
+// ---------------------------------------------------------------------------
 // 3.4  removeTrackFromPlaylist(accessToken, playlistId, trackUri)
 // ---------------------------------------------------------------------------
 
@@ -371,7 +443,10 @@ async function isPlaylistEditable(accessToken, playlistId, authUserId) {
  * @returns {Promise<true>}
  */
 export async function addTrackToPlaylist(accessToken, playlistId, trackUri) {
-  const url = `https://api.spotify.com/v1/playlists/${playlistId}/tracks`
+  // Spotify February 2026 breaking change: the playlist tracks endpoint was
+  // renamed from /tracks to /items (mirrors removeTrackFromPlaylist above).
+  // The add body still uses the "uris" field.
+  const url = `https://api.spotify.com/v1/playlists/${playlistId}/items`
 
   await axios.post(
     url,

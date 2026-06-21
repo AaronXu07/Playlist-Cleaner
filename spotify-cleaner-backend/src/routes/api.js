@@ -1,14 +1,20 @@
 import express from 'express'
 import requireAuth from '../middleware/auth.js'
 import getSupabase from '../lib/supabase.js'
-import { addTrackToPlaylist, refreshTokenIfNeeded } from '../lib/spotify.js'
+import {
+  addTrackToPlaylist,
+  refreshTokenIfNeeded,
+  getTracksDetails,
+} from '../lib/spotify.js'
 import { userState, registerUser, deregisterUser } from '../lib/poller.js'
 
 const router = express.Router()
 
 // ---------------------------------------------------------------------------
 // Task 8.1 — GET /api/removals
-// List the 50 most recent removal log entries for the authenticated user.
+// List the 50 most recent removal log entries for the authenticated user,
+// enriched with the real track name, artist, and album art from Spotify so the
+// dashboard can show song titles + cover images (not raw track IDs).
 // Requirements: 7.2
 // ---------------------------------------------------------------------------
 router.get('/removals', requireAuth, async (req, res) => {
@@ -26,7 +32,41 @@ router.get('/removals', requireAuth, async (req, res) => {
     return res.status(500).json({ error: 'Failed to fetch removals' })
   }
 
-  return res.json(data)
+  const rows = data ?? []
+
+  // Best-effort enrichment with Spotify track metadata. If the token can't be
+  // loaded/refreshed or the Spotify call fails, fall back to the raw rows so
+  // the list still renders.
+  let details = new Map()
+  try {
+    const { data: userRows, error: userError } = await supabase
+      .from('users')
+      .select('id, access_token, refresh_token, token_expires_at')
+      .eq('id', req.user.userId)
+      .limit(1)
+
+    if (!userError && userRows && userRows.length > 0) {
+      const { accessToken } = await refreshTokenIfNeeded(userRows[0])
+      const trackIds = rows.map((r) => r.track_id)
+      details = await getTracksDetails(accessToken, trackIds)
+    }
+  } catch (enrichErr) {
+    console.error('[api] GET /removals enrichment error:', enrichErr.message)
+  }
+
+  const enriched = rows.map((row) => {
+    const meta = details.get(row.track_id)
+    return {
+      ...row,
+      // Prefer the live Spotify name; fall back to stored track_name (which may
+      // be the raw track ID for older rows).
+      track_name: meta?.name ?? row.track_name,
+      artist_name: meta?.artist ?? null,
+      album_art: meta?.albumArt ?? null,
+    }
+  })
+
+  return res.json(enriched)
 })
 
 // ---------------------------------------------------------------------------
@@ -122,23 +162,55 @@ router.get('/events', requireAuth, async (req, res) => {
 
 // ---------------------------------------------------------------------------
 // Task 8.4 — GET /api/status
-// Return the current in-memory polling state for the authenticated user.
+// Return the durable cleaning-enabled state plus current poller diagnostics.
 // Requirements: 1.9, 13.1
 // ---------------------------------------------------------------------------
-router.get('/status', requireAuth, (req, res) => {
-  const state = userState.get(req.user.userId)
+router.get('/status', requireAuth, async (req, res) => {
+  const { userId } = req.user
+  const supabase = getSupabase()
 
-  if (!state) {
-    return res.json({ registered: false })
+  const { data, error } = await supabase
+    .from('users')
+    .select('polling_enabled')
+    .eq('id', userId)
+    .limit(1)
+
+  if (error) {
+    console.error('[api] GET /status db error:', error.message)
+    return res.status(500).json({ error: 'Failed to fetch polling state' })
   }
 
-  const { isRunning, consecutive204s, reducedMode, liveTrack } = state
+  const user = data?.[0]
+  const pollingEnabled = user?.polling_enabled === true
+
+  if (!user) {
+    return res.json({
+      registered: false,
+      pollingEnabled: false,
+      isRunning: false,
+      isPollCycleRunning: false,
+    })
+  }
+
+  if (pollingEnabled && !userState.has(userId)) {
+    registerUser(userId)
+  }
+
+  if (!pollingEnabled && userState.has(userId)) {
+    deregisterUser(userId)
+  }
+
+  const state = userState.get(userId)
 
   return res.json({
-    isRunning,
-    consecutive204s,
-    reducedMode,
-    hasLiveTrack: !!liveTrack,
+    registered: !!state,
+    pollingEnabled,
+    // Backwards-compatible name consumed by the current frontend toggle.
+    isRunning: pollingEnabled,
+    isPollCycleRunning: state?.isRunning ?? false,
+    consecutive204s: state?.consecutive204s ?? 0,
+    reducedMode: state?.reducedMode ?? false,
+    hasLiveTrack: !!state?.liveTrack,
   })
 })
 

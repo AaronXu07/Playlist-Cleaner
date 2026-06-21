@@ -1,0 +1,39 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── Design Tokens ─────────────────────────────────────────────────────────── */
+:root {
+  --color-bg-base:          #121212;
+  --color-bg-surface:       #242424;
+  --color-bg-surface-hover: #2e2e2e;
+  --color-brand:            #1DB954;
+  --color-danger:           #E74C3C;
+  --color-text-primary:     #FFFFFF;
+  --color-text-muted:       #A7A7A7;
+  --color-glass-surface:    rgba(32, 32, 32, 0.12);
+  --color-glass-edge:       rgba(255, 255, 255, 0.12);
+  --color-glass-highlight:  rgba(255, 255, 255, 0.18);
+  --shadow-elevated:        0 4px 24px rgba(0, 0, 0, 0.72);
+  --shadow-glass-panel:     0 4px 24px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.08), inset 0 -24px 48px rgba(0, 0, 0, 0.28);
+  --radius-card:            8px;
+  --radius-pill:            9999px;
+}
+
+/* ── Base Styles ────────────────────────────────────────────────────────────── */
+body {
+  background-color: var(--color-bg-base);
+  color: var(--color-text-primary);
+}
+
+/* ── Reduced Motion ─────────────────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

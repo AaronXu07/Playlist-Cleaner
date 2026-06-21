@@ -11,6 +11,7 @@ const router = Router()
 const SCOPES = [
   'user-read-playback-state',       // See what's currently playing
   'user-read-recently-played',      // Read recently played tracks
+  'user-read-private',              // Required for /v1/tracks market resolution
   'playlist-modify-public',         // Remove tracks from public playlists
   'playlist-modify-private',        // Remove tracks from private playlists
 ].join(' ')
@@ -71,6 +72,9 @@ router.get('/callback', async (req, res) => {
     })
 
     const spotifyId = profileResponse.data.id
+    const displayName = profileResponse.data.display_name ?? null
+    // images is an array ordered largest-first; pick the first (largest) one.
+    const avatarUrl = profileResponse.data.images?.[0]?.url ?? null
 
     // ── Encrypt tokens before storing ────────────────────────────────────
     const encryptedAccess = encrypt(access_token)
@@ -78,7 +82,7 @@ router.get('/callback', async (req, res) => {
     const tokenExpiresAt = new Date(Date.now() + expires_in * 1000).toISOString()
 
     // ── Upsert user in Supabase ───────────────────────────────────────────
-    // If the user already exists (re-auth), update their tokens.
+    // If the user already exists (re-auth), update their tokens and profile.
     // If they're new, insert them.
     const { data: user, error: dbError } = await getSupabase()
       .from('users')
@@ -88,10 +92,12 @@ router.get('/callback', async (req, res) => {
           access_token: encryptedAccess,
           refresh_token: encryptedRefresh,
           token_expires_at: tokenExpiresAt,
+          display_name: displayName,
+          avatar_url: avatarUrl,
         },
         { onConflict: 'spotify_id', ignoreDuplicates: false }
       )
-      .select('id, spotify_id')
+      .select('id, spotify_id, display_name, avatar_url')
       .single()
 
     if (dbError) {
@@ -103,10 +109,13 @@ router.get('/callback', async (req, res) => {
     registerUser(user.id)
 
     // ── Issue a JWT session cookie ────────────────────────────────────────
-    // This is what the frontend will send on subsequent requests to
-    // identify the logged-in user.
     const sessionToken = jwt.sign(
-      { userId: user.id, spotifyId: user.spotify_id },
+      {
+        userId: user.id,
+        spotifyId: user.spotify_id,
+        displayName: user.display_name ?? null,
+        avatarUrl: user.avatar_url ?? null,
+      },
       process.env.JWT_SECRET,
       { expiresIn: '7d' }
     )
@@ -134,7 +143,12 @@ router.get('/me', (req, res) => {
 
   try {
     const payload = jwt.verify(token, process.env.JWT_SECRET)
-    res.json({ userId: payload.userId, spotifyId: payload.spotifyId })
+    res.json({
+      userId: payload.userId,
+      spotifyId: payload.spotifyId,
+      displayName: payload.displayName ?? null,
+      avatarUrl: payload.avatarUrl ?? null,
+    })
   } catch {
     res.status(401).json({ error: 'Invalid or expired session' })
   }
@@ -151,7 +165,14 @@ router.post('/logout', (req, res) => {
       // expired/invalid token — nothing to deregister
     }
   }
-  res.clearCookie('session')
+  // clearCookie must be given the same options the cookie was set with
+  // (httpOnly/sameSite/secure/path) or the browser won't match and clear it.
+  res.clearCookie('session', {
+    httpOnly: true,
+    secure: false,
+    sameSite: 'lax',
+    path: '/',
+  })
   res.json({ success: true })
 })
 

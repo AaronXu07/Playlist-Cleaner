@@ -1,0 +1,23 @@
+fetch() {
+  local year="$1" title="$2" artist="$3"
+  local q
+  q=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1]))" "track:$title artist:$artist")
+  curl -s "https://api.spotify.com/v1/search?q=$q&type=track&limit=1&market=US" -H "Authorization: Bearer $TOKEN" \
+    | python3 -c "import sys,json
+y=sys.argv[1]
+d=json.load(sys.stdin)['tracks']['items']
+t=d[0] if d else None
+print(('%s | %s | %s | %s | %s | %s')%(y, t['name'], ', '.join(a['name'] for a in t['artists']), t['id'], t['album']['images'][0]['url'], t.get('preview_url')) if t else y+' | NONE')" "$year" >> "$OUT"
+}
+fetch 2016 "One Dance" "Drake"
+fetch 2017 "Shape of You" "Ed Sheeran"
+fetch 2018 "God's Plan" "Drake"
+fetch 2019 "Old Town Road" "Lil Nas X"
+fetch 2020 "Blinding Lights" "The Weeknd"
+fetch 2021 "drivers license" "Olivia Rodrigo"
+fetch 2022 "As It Was" "Harry Styles"
+fetch 2023 "Flowers" "Miley Cyrus"
+fetch 2024 "Espresso" "Sabrina Carpenter"
+fetch 2025 "APT." "ROSÉ Bruno Mars"
+fetch 2026 "Die With a Smile" "Lady Gaga Bruno Mars"
+echo done

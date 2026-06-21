@@ -673,6 +673,7 @@ export function registerUser(userId) {
   // Store state immediately with intervalId: null; update inside the callback.
   const state = {
     intervalId: null,
+    staggerTimeoutId: null,
     isRunning: false,
     consecutive204s: 0,
     reducedMode: false,
@@ -687,10 +688,13 @@ export function registerUser(userId) {
   // 20 000 ms interval — reduced from 10 000 ms to avoid Spotify rate limits.
   const interval = 20000
 
-  setTimeout(() => {
-    const intervalId = setInterval(() => runPollCycle(userId), interval)
-    // The state object is already in the map; just update intervalId.
-    state.intervalId = intervalId
+  state.staggerTimeoutId = setTimeout(() => {
+    state.staggerTimeoutId = null
+    // Guard against a deregister that happened during the stagger window:
+    // if the user was removed (or re-registered with a fresh state), do not
+    // create an orphaned interval that can never be cleared.
+    if (userState.get(userId) !== state) return
+    state.intervalId = setInterval(() => runPollCycle(userId), interval)
   }, staggerMs)
 }
 
@@ -702,6 +706,9 @@ export function registerUser(userId) {
 export function deregisterUser(userId) {
   const state = userState.get(userId)
   if (!state) return
+  // Clear a pending stagger timeout (deregister during the stagger window) so
+  // it cannot fire later and create an untracked interval.
+  if (state.staggerTimeoutId) clearTimeout(state.staggerTimeoutId)
   clearInterval(state.intervalId)
   userState.delete(userId)
 }
