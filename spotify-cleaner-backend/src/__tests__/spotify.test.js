@@ -34,8 +34,14 @@ import {
   getCurrentlyPlaying,
   getRecentlyPlayed,
   removeTrackFromPlaylist,
+  addTrackToPlaylist,
+  resetSpotifyRateLimitBackoffForTests,
 } from '../lib/spotify.js'
 import getSupabase from '../lib/supabase.js'
+
+beforeEach(() => {
+  resetSpotifyRateLimitBackoffForTests()
+})
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -235,6 +241,31 @@ describe('Property 16: Retry-After wait is capped at 60 s and applied up to 3 ti
     expect(sleepCalls.length).toBeGreaterThanOrEqual(1)
 
     setTimeoutSpy.mockRestore()
+  })
+
+  it('logs Retry-After and retries playlist mutations after a 429', async () => {
+    const err = Object.assign(new Error('429'), {
+      response: { status: 429, headers: { 'retry-after': '7' } },
+    })
+
+    axios.post = vi.fn()
+      .mockRejectedValueOnce(err)
+      .mockResolvedValueOnce({ status: 201, data: {} })
+
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    const promise = addTrackToPlaylist('tok', 'playlist-1', 'spotify:track:track-1')
+    await vi.runAllTimersAsync()
+    await promise
+
+    expect(axios.post).toHaveBeenCalledTimes(2)
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining('POST https://api.spotify.com/v1/playlists/playlist-1/items')
+    )
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('Retry-After=7'))
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('sleeping 7s'))
+
+    warnSpy.mockRestore()
   })
 
   it('throws after 3 consecutive 429s (retries exhausted)', async () => {

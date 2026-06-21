@@ -43,14 +43,17 @@ import {
 
 /**
  * Build the full Supabase builder chain mock for a given data/error result.
- * Supports: supabase.from(t).select(s).not(col, op, val)  → { data, error }
+ * Supports:
+ *   supabase.from(t).select(s).not(col, op, val) → { data, error }
+ *   supabase.from(t).select(s).not(col, op, val).eq(col, val) → { data, error }
  */
 function buildSupabaseMock(result) {
-  const notMock = vi.fn().mockResolvedValue(result)
+  const eqAfterNotMock = vi.fn().mockResolvedValue(result)
+  const notMock = vi.fn(() => ({ eq: eqAfterNotMock }))
   const selectMock = vi.fn(() => ({ not: notMock }))
   const fromMock = vi.fn(() => ({ select: selectMock }))
   getSupabase.mockReturnValue({ from: fromMock })
-  return { fromMock, selectMock, notMock }
+  return { fromMock, selectMock, notMock, eqAfterNotMock }
 }
 
 // ---------------------------------------------------------------------------
@@ -1400,6 +1403,7 @@ describe('Integration: full poll cycle with mocked Spotify client', () => {
       consecutive204s: 0,
       reducedMode: false,
       liveTrack: null,
+      pollCount: 3,
     })
 
     // ── Spotify mocks ────────────────────────────────────────────────────
@@ -1558,7 +1562,7 @@ describe('Integration: skip detection → removal log written', () => {
     forbiddenPlaylists.delete(playlistId)
   })
 
-  it('calls removeTrackFromPlaylist and inserts removal_log row with correct fields', async () => {
+  it('calls removeTrackFromPlaylist and inserts removal_log row with stored display metadata', async () => {
     // ── Supabase mock ────────────────────────────────────────────────────
 
     // removal_log select: no cutoff
@@ -1604,7 +1608,13 @@ describe('Integration: skip detection → removal log written', () => {
     removeTrackFromPlaylist.mockResolvedValue(true)
 
     // ── Run detectSkip directly ──────────────────────────────────────────
-    await detectSkip(userId, trackId, playlistId, accessToken)
+    const trackMetadata = {
+      name: 'Stored Test Track',
+      artist: 'Stored Artist',
+      albumArt: 'https://i.scdn.co/image/stored-album-art',
+    }
+
+    await detectSkip(userId, trackId, playlistId, accessToken, undefined, trackMetadata)
 
     // removeTrackFromPlaylist must have been called once
     expect(removeTrackFromPlaylist).toHaveBeenCalledOnce()
@@ -1616,6 +1626,9 @@ describe('Integration: skip detection → removal log written', () => {
     expect(capturedRemovalRow.user_id).toBe(userId)
     expect(capturedRemovalRow.track_id).toBe(trackId)
     expect(capturedRemovalRow.playlist_id).toBe(playlistId)
+    expect(capturedRemovalRow.track_name).toBe(trackMetadata.name)
+    expect(capturedRemovalRow.artist_name).toBe(trackMetadata.artist)
+    expect(capturedRemovalRow.album_art).toBe(trackMetadata.albumArt)
   })
 })
 

@@ -8,28 +8,49 @@ import getSupabase from './supabase.js'
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
+const MAX_RATE_LIMIT_ATTEMPTS = 3
+const DEFAULT_RETRY_AFTER_SECONDS = 30
+const MAX_RETRY_AFTER_SECONDS = 60
+
+let sharedSpotifyBackoffUntil = 0
+
+export function resetSpotifyRateLimitBackoffForTests() {
+  sharedSpotifyBackoffUntil = 0
+}
+
+function parseRetryAfterSeconds(rawValue) {
+  const parsed = parseInt(rawValue ?? '', 10)
+  if (!Number.isFinite(parsed) || parsed <= 0) return DEFAULT_RETRY_AFTER_SECONDS
+  return Math.min(parsed, MAX_RETRY_AFTER_SECONDS)
+}
+
+async function waitForSharedSpotifyBackoff(method, url) {
+  const waitMs = sharedSpotifyBackoffUntil - Date.now()
+  if (waitMs <= 0) return
+
+  console.warn(
+    `[spotify] shared rate-limit backoff active for ${method.toUpperCase()} ${url}; waiting ${Math.ceil(waitMs / 1000)}s`
+  )
+  await sleep(waitMs)
+}
+
 /**
- * Execute a GET request against a Spotify endpoint with up to 3 retries on
- * HTTP 429 (rate limit).  axios throws on non-2xx, so 429 arrives as an error
- * with err.response.status === 429.
+ * Execute a Spotify Web API request with up to 3 attempts on HTTP 429.
+ * Any 429 extends a module-wide backoff so concurrent Spotify requests pause
+ * behind the same Retry-After window instead of continuing to pile on.
  *
+ * @param {'get'|'post'|'delete'} method
  * @param {string} url
- * @param {object} headers  - { Authorization: 'Bearer <token>' }
+ * @param {Array} axiosArgs
  * @returns {import('axios').AxiosResponse}
  */
-async function getWithRateLimitRetry(url, headers) {
+async function requestWithRateLimitRetry(method, url, axiosArgs) {
   let attempt = 0
 
-  while (attempt < 3) {
+  while (attempt < MAX_RATE_LIMIT_ATTEMPTS) {
     try {
-      const response = await axios.get(url, {
-        headers,
-        timeout: 10_000,
-        // Tell axios not to throw on 204 so we can inspect the status ourselves.
-        // We still want it to throw on genuine errors (4xx other than 429, 5xx).
-        validateStatus: (status) => status === 200 || status === 204,
-      })
-      return response
+      await waitForSharedSpotifyBackoff(method, url)
+      return await axios[method](url, ...axiosArgs)
     } catch (err) {
       // Axios throws on non-2xx when validateStatus says false, and also on
       // network/timeout errors.  We only handle 429 here; everything else
@@ -37,13 +58,15 @@ async function getWithRateLimitRetry(url, headers) {
       const status = err?.response?.status
 
       if (status === 429) {
-        const retryAfterRaw = err.response.headers['retry-after']
-        const retryAfter = Math.min(
-          parseInt(retryAfterRaw ?? '30', 10) || 30,
-          60
+        const headers = err.response.headers ?? {}
+        const retryAfterRaw = headers['retry-after'] ?? headers['Retry-After']
+        const retryAfter = parseRetryAfterSeconds(retryAfterRaw)
+        sharedSpotifyBackoffUntil = Math.max(
+          sharedSpotifyBackoffUntil,
+          Date.now() + retryAfter * 1000
         )
         console.warn(
-          `[spotify] 429 rate-limited on ${url} — waiting ${retryAfter}s (attempt ${attempt + 1}/3)`
+          `[spotify] 429 rate-limited on ${method.toUpperCase()} ${url}; Retry-After=${retryAfterRaw ?? 'missing'}; sleeping ${retryAfter}s (attempt ${attempt + 1}/${MAX_RATE_LIMIT_ATTEMPTS})`
         )
         await sleep(retryAfter * 1000)
         attempt++
@@ -55,7 +78,26 @@ async function getWithRateLimitRetry(url, headers) {
     }
   }
 
-  throw new Error(`[spotify] Rate-limit retries exhausted for ${url}`)
+  throw new Error(`[spotify] Rate-limit retries exhausted for ${method.toUpperCase()} ${url}`)
+}
+
+/**
+ * Execute a GET request against a Spotify endpoint with up to 3 attempts on
+ * HTTP 429 (rate limit). Axios throws on non-2xx, so 429 arrives as an error
+ * with err.response.status === 429.
+ *
+ * @param {string} url
+ * @param {object} headers  - { Authorization: 'Bearer <token>' }
+ * @returns {import('axios').AxiosResponse}
+ */
+async function getWithRateLimitRetry(url, headers) {
+  return requestWithRateLimitRetry('get', url, [{
+    headers,
+    timeout: 10_000,
+    // Tell axios not to throw on 204 so we can inspect the status ourselves.
+    // We still want it to throw on genuine errors (4xx other than 429, 5xx).
+    validateStatus: (status) => status === 200 || status === 204,
+  }])
 }
 
 // ---------------------------------------------------------------------------
@@ -335,14 +377,14 @@ export async function removeTrackFromPlaylist(accessToken, playlistId, trackUri,
   const url = `https://api.spotify.com/v1/playlists/${playlistId}/items`
 
   try {
-    await axios.delete(url, {
+    await requestWithRateLimitRetry('delete', url, [{
       data: { items: [{ uri: trackUri }] },
       headers: {
         Authorization: `Bearer ${accessToken}`,
         'Content-Type': 'application/json',
       },
       timeout: 10_000,
-    })
+    }])
   } catch (err) {
     const status = err?.response?.status
 
@@ -448,16 +490,19 @@ export async function addTrackToPlaylist(accessToken, playlistId, trackUri) {
   // The add body still uses the "uris" field.
   const url = `https://api.spotify.com/v1/playlists/${playlistId}/items`
 
-  await axios.post(
+  await requestWithRateLimitRetry(
+    'post',
     url,
-    { uris: [trackUri] },
-    {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
+    [
+      { uris: [trackUri] },
+      {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        timeout: 10_000,
       },
-      timeout: 10_000,
-    }
+    ]
   )
 
   return true

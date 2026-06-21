@@ -4,7 +4,6 @@ import getSupabase from '../lib/supabase.js'
 import {
   addTrackToPlaylist,
   refreshTokenIfNeeded,
-  getTracksDetails,
 } from '../lib/spotify.js'
 import { userState, registerUser, deregisterUser } from '../lib/poller.js'
 
@@ -13,8 +12,9 @@ const router = express.Router()
 // ---------------------------------------------------------------------------
 // Task 8.1 — GET /api/removals
 // List the 50 most recent removal log entries for the authenticated user,
-// enriched with the real track name, artist, and album art from Spotify so the
-// dashboard can show song titles + cover images (not raw track IDs).
+// using metadata captured at removal time. This route intentionally does not
+// call Spotify; otherwise dashboard page loads can fan out into many track
+// detail requests and contribute to rate limiting.
 // Requirements: 7.2
 // ---------------------------------------------------------------------------
 router.get('/removals', requireAuth, async (req, res) => {
@@ -32,41 +32,7 @@ router.get('/removals', requireAuth, async (req, res) => {
     return res.status(500).json({ error: 'Failed to fetch removals' })
   }
 
-  const rows = data ?? []
-
-  // Best-effort enrichment with Spotify track metadata. If the token can't be
-  // loaded/refreshed or the Spotify call fails, fall back to the raw rows so
-  // the list still renders.
-  let details = new Map()
-  try {
-    const { data: userRows, error: userError } = await supabase
-      .from('users')
-      .select('id, access_token, refresh_token, token_expires_at')
-      .eq('id', req.user.userId)
-      .limit(1)
-
-    if (!userError && userRows && userRows.length > 0) {
-      const { accessToken } = await refreshTokenIfNeeded(userRows[0])
-      const trackIds = rows.map((r) => r.track_id)
-      details = await getTracksDetails(accessToken, trackIds)
-    }
-  } catch (enrichErr) {
-    console.error('[api] GET /removals enrichment error:', enrichErr.message)
-  }
-
-  const enriched = rows.map((row) => {
-    const meta = details.get(row.track_id)
-    return {
-      ...row,
-      // Prefer the live Spotify name; fall back to stored track_name (which may
-      // be the raw track ID for older rows).
-      track_name: meta?.name ?? row.track_name,
-      artist_name: meta?.artist ?? null,
-      album_art: meta?.albumArt ?? null,
-    }
-  })
-
-  return res.json(enriched)
+  return res.json(data ?? [])
 })
 
 // ---------------------------------------------------------------------------

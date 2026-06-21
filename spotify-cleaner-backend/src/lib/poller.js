@@ -55,6 +55,9 @@ export const forbiddenPlaylists = new Map()
  */
 export const usersNeedingReauth = new Set()
 
+const POLL_INTERVAL_MS = 15_000
+const RECENTLY_PLAYED_CYCLE_INTERVAL = 4
+
 /**
  * Return true only if `playlistId` has an active (non-expired) blocklist entry.
  * If the entry exists but has expired, it is deleted (lazy eviction) and false
@@ -89,6 +92,32 @@ export function blockPlaylist(playlistId) {
  */
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
+/**
+ * Extract the small display metadata we already receive from player/recently
+ * played payloads. This lets the removal log render without calling Spotify
+ * again from GET /api/removals.
+ *
+ * @param {object|null|undefined} track
+ * @returns {{ name: string|null, artist: string|null, albumArt: string|null }}
+ */
+function extractTrackMetadata(track) {
+  if (!track) {
+    return { name: null, artist: null, albumArt: null }
+  }
+
+  const albumImages = track.album?.images ?? []
+  const albumArt = albumImages.length > 0
+    ? albumImages[albumImages.length - 1].url
+    : null
+  const artist = (track.artists ?? []).map((a) => a.name).filter(Boolean).join(', ') || null
+
+  return {
+    name: track.name ?? null,
+    artist,
+    albumArt,
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Task 5.4–5.6 helpers
 // ---------------------------------------------------------------------------
@@ -117,6 +146,7 @@ function closeLiveTrack(state, userId) {
     listenedPct,
     listenedAt: new Date().toISOString(),
     source,
+    trackMetadata: lt.trackMetadata ?? { name: null, artist: null, albumArt: null },
   }
 }
 
@@ -186,6 +216,7 @@ export function processLiveTrack(userId, cpResult, state) {
       maxProgressMs: progressMs,
       playlistId,
       pausedSince: null,
+      trackMetadata: extractTrackMetadata(cpResult?.item),
     }
     // Reset reduced mode / consecutive 204 counter on active track
     state.consecutive204s = 0
@@ -293,6 +324,7 @@ export function reconcileRecentlyPlayed(userId, rpItems, lastPollAt) {
       listenedPct,
       listenedAt: item.played_at,
       source: 'recent',
+      trackMetadata: extractTrackMetadata(item.track),
     })
   }
 
@@ -409,9 +441,10 @@ export async function writeListenEvent(event) {
  * @param {string} accessToken
  * @param {string} [authUserId] - the authenticated user's Spotify ID, threaded
  *   to removeTrackFromPlaylist so it can probe playlist editability on a 403.
+ * @param {{ name?: string|null, artist?: string|null, albumArt?: string|null }} [trackMetadata]
  * @returns {Promise<void>}
  */
-async function removeTrack(userId, trackId, playlistId, accessToken, authUserId) {
+async function removeTrack(userId, trackId, playlistId, accessToken, authUserId, trackMetadata = {}) {
   // Req 9.6 / 3.5 — skip silently if playlist has an active blocklist entry
   if (isPlaylistBlocked(playlistId)) return
 
@@ -454,7 +487,9 @@ async function removeTrack(userId, trackId, playlistId, accessToken, authUserId)
       user_id: userId,
       track_id: trackId,
       playlist_id: playlistId,
-      track_name: trackId, // trackId as fallback when track name is unavailable
+      track_name: trackMetadata?.name ?? trackId,
+      artist_name: trackMetadata?.artist ?? null,
+      album_art: trackMetadata?.albumArt ?? null,
       reason: 'skipped 2/2 recent listens',
     })
 
@@ -480,9 +515,10 @@ async function removeTrack(userId, trackId, playlistId, accessToken, authUserId)
  * @param {string} accessToken
  * @param {string} [authUserId] - the authenticated user's Spotify ID, forwarded
  *   to removeTrack → removeTrackFromPlaylist for 403 editability disambiguation.
+ * @param {{ name?: string|null, artist?: string|null, albumArt?: string|null }} [trackMetadata]
  * @returns {Promise<void>}
  */
-export async function detectSkip(userId, trackId, playlistId, accessToken, authUserId) {
+export async function detectSkip(userId, trackId, playlistId, accessToken, authUserId, trackMetadata = {}) {
   const supabase = getSupabase()
 
   // Req 11.1, 11.2 — query most-recent removal_log row for this triple
@@ -538,7 +574,7 @@ export async function detectSkip(userId, trackId, playlistId, accessToken, authU
   if (!events.every((row) => row.was_skipped === true)) return
 
   // Req 6.2 — all 2 are skips → trigger removal
-  await removeTrack(userId, trackId, playlistId, accessToken, authUserId)
+  await removeTrack(userId, trackId, playlistId, accessToken, authUserId, trackMetadata)
 }
 
 // ---------------------------------------------------------------------------
@@ -596,12 +632,12 @@ export async function runPollCycle(userId) {
     }
 
     // Increment cycle counter and decide whether to fetch recently-played.
-    // /recently-played only updates when a track finishes, so every 3rd cycle
-    // (~60s) is sufficient and avoids hammering the rate limit.
+    // /recently-played only updates when a track finishes, so every 4th 15s
+    // cycle (~60s) is sufficient and avoids hammering the rate limit.
     state.pollCount = (state.pollCount ?? 0) + 1
-    const fetchRecentlyPlayed = state.pollCount % 3 === 0
+    const fetchRecentlyPlayed = state.pollCount % RECENTLY_PLAYED_CYCLE_INTERVAL === 0
 
-    // Parallel fetch — recently-played only on every 3rd cycle
+    // Parallel fetch — recently-played only on every 4th cycle
     const [cpResult, rpItems] = await Promise.all([
       getCurrentlyPlaying(accessToken, userId),
       fetchRecentlyPlayed ? getRecentlyPlayed(accessToken, userId) : Promise.resolve([]),
@@ -620,7 +656,14 @@ export async function runPollCycle(userId) {
     for (const event of allEvents) {
       const inserted = await writeListenEvent(event)
       if (inserted) {
-        await detectSkip(event.userId, event.trackId, event.playlistId, accessToken, user.spotify_id)
+        await detectSkip(
+          event.userId,
+          event.trackId,
+          event.playlistId,
+          accessToken,
+          user.spotify_id,
+          event.trackMetadata
+        )
       }
     }
   } catch (err) {
@@ -685,16 +728,13 @@ export function registerUser(userId) {
   // Stagger_Offset: uniformly random in [0, 5000] ms (Req 1.10).
   const staggerMs = Math.floor(Math.random() * 5001)
 
-  // 20 000 ms interval — reduced from 10 000 ms to avoid Spotify rate limits.
-  const interval = 20000
-
   state.staggerTimeoutId = setTimeout(() => {
     state.staggerTimeoutId = null
     // Guard against a deregister that happened during the stagger window:
     // if the user was removed (or re-registered with a fresh state), do not
     // create an orphaned interval that can never be cleared.
     if (userState.get(userId) !== state) return
-    state.intervalId = setInterval(() => runPollCycle(userId), interval)
+    state.intervalId = setInterval(() => runPollCycle(userId), POLL_INTERVAL_MS)
   }, staggerMs)
 }
 
