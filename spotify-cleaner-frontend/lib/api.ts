@@ -31,6 +31,8 @@ export interface RemovalRecord {
   user_id: string;
   track_id: string;
   playlist_id: string;
+  /** Display name of the playlist the track was removed from, captured at removal time. */
+  playlist_name?: string | null;
   track_name: string;
   removed_at: string; // ISO 8601
   reason: string;

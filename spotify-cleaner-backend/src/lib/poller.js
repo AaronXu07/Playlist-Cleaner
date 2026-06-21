@@ -3,6 +3,7 @@ import {
   refreshTokenIfNeeded,
   getCurrentlyPlaying,
   getRecentlyPlayed,
+  getPlaylistDetails,
   removeTrackFromPlaylist,
 } from './spotify.js'
 
@@ -479,6 +480,8 @@ async function removeTrack(userId, trackId, playlistId, accessToken, authUserId,
     return
   }
 
+  const playlistMetadata = await getPlaylistDetails(accessToken, playlistId)
+
   // Req 7.2 — write removal_log on success
   const supabase = getSupabase()
   const { error: logError } = await supabase
@@ -487,6 +490,7 @@ async function removeTrack(userId, trackId, playlistId, accessToken, authUserId,
       user_id: userId,
       track_id: trackId,
       playlist_id: playlistId,
+      playlist_name: playlistMetadata?.name ?? null,
       track_name: trackMetadata?.name ?? trackId,
       artist_name: trackMetadata?.artist ?? null,
       album_art: trackMetadata?.albumArt ?? null,

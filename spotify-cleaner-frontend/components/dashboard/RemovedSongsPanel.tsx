@@ -12,7 +12,7 @@ import type { RemovalRecord } from '@/lib/api';
 // ---------------------------------------------------------------------------
 
 /** Number of removed songs shown per page. */
-const PAGE_SIZE = 8;
+const PAGE_SIZE = 10;
 
 // ---------------------------------------------------------------------------
 // Props
@@ -65,6 +65,7 @@ export function RemovedSongsPanel({
   const safePage = Math.min(page, totalPages - 1);
   const pageStart = safePage * PAGE_SIZE;
   const pageSongs = songs.slice(pageStart, pageStart + PAGE_SIZE);
+  const shouldDistributeRows = pageSongs.length >= 8;
 
   // Pick the most recent row error to show in the toast.
   const rowErrorValues = Object.values(rowErrors);
@@ -127,7 +128,10 @@ export function RemovedSongsPanel({
     // 4. Song list (current page only)
     return (
       <ul
-        className="flex h-full max-h-full flex-col gap-1 overflow-y-auto overscroll-contain pr-1 [scrollbar-gutter:stable]"
+        className={`
+          flex h-full max-h-full flex-col overflow-y-auto overscroll-contain pr-1 [scrollbar-gutter:stable]
+          ${shouldDistributeRows ? 'justify-between gap-2' : 'gap-3'}
+        `}
         aria-live="polite"
         aria-label="Removed songs list"
       >
@@ -240,6 +244,10 @@ interface SongRowProps {
 function SongRow({ song, isPending, rowError, onReAdd }: SongRowProps) {
   const artistName = song.artist_name ?? undefined;
   const albumArt = song.album_art ?? undefined;
+  const playlistName = song.playlist_name?.trim() || song.playlist_id;
+  const secondaryText = [`From ${playlistName}`, artistName]
+    .filter(Boolean)
+    .join(' • ');
 
   const altText = artistName
     ? `${song.track_name} by ${artistName} album art`
@@ -251,9 +259,9 @@ function SongRow({ song, isPending, rowError, onReAdd }: SongRowProps) {
       initial={{ opacity: 1, height: 'auto' }}
       exit={{ opacity: 0, height: 0 }}
       transition={{ duration: 0.2, ease: 'easeInOut' }}
-      className="shrink-0 overflow-hidden"
+      className="w-full min-w-0 shrink-0 overflow-hidden"
     >
-      <div className="flex items-center gap-3">
+      <div className="grid w-full min-w-0 grid-cols-[3rem_minmax(0,1fr)_2rem] items-center gap-3">
         {/* Album art */}
         {albumArt ? (
           // eslint-disable-next-line @next/next/no-img-element
@@ -274,13 +282,16 @@ function SongRow({ song, isPending, rowError, onReAdd }: SongRowProps) {
         )}
 
         {/* Track info */}
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium text-primary truncate">
+        <div className="min-w-0 overflow-hidden">
+          <p
+            className="max-w-full truncate text-sm font-medium text-primary"
+            title={song.track_name}
+          >
             {song.track_name}
           </p>
-          {artistName && (
-            <p className="text-xs text-muted truncate">{artistName}</p>
-          )}
+          <p className="max-w-full truncate text-xs text-muted" title={secondaryText}>
+            {secondaryText}
+          </p>
           {/* Inline row error */}
           {rowError && (
             <p className="text-xs text-danger mt-1" role="alert">

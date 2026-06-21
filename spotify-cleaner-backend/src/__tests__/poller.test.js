@@ -19,6 +19,7 @@ vi.mock('../lib/spotify.js', () => ({
   refreshTokenIfNeeded: vi.fn(),
   getCurrentlyPlaying: vi.fn(),
   getRecentlyPlayed: vi.fn(),
+  getPlaylistDetails: vi.fn(),
   removeTrackFromPlaylist: vi.fn(),
 }))
 
@@ -552,6 +553,7 @@ import {
   refreshTokenIfNeeded,
   getCurrentlyPlaying,
   getRecentlyPlayed,
+  getPlaylistDetails,
 } from '../lib/spotify.js'
 
 // ---------------------------------------------------------------------------
@@ -1606,6 +1608,7 @@ describe('Integration: skip detection → removal log written', () => {
 
     // removeTrackFromPlaylist resolves successfully
     removeTrackFromPlaylist.mockResolvedValue(true)
+    getPlaylistDetails.mockResolvedValue({ name: 'Stored Test Playlist' })
 
     // ── Run detectSkip directly ──────────────────────────────────────────
     const trackMetadata = {
@@ -1626,6 +1629,7 @@ describe('Integration: skip detection → removal log written', () => {
     expect(capturedRemovalRow.user_id).toBe(userId)
     expect(capturedRemovalRow.track_id).toBe(trackId)
     expect(capturedRemovalRow.playlist_id).toBe(playlistId)
+    expect(capturedRemovalRow.playlist_name).toBe('Stored Test Playlist')
     expect(capturedRemovalRow.track_name).toBe(trackMetadata.name)
     expect(capturedRemovalRow.artist_name).toBe(trackMetadata.artist)
     expect(capturedRemovalRow.album_art).toBe(trackMetadata.albumArt)

@@ -6,3 +6,6 @@ ALTER TABLE removal_log
 
 ALTER TABLE removal_log
   ADD COLUMN IF NOT EXISTS album_art TEXT;
+
+ALTER TABLE removal_log
+  ADD COLUMN IF NOT EXISTS playlist_name TEXT;

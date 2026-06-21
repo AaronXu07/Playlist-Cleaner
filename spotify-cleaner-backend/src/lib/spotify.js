@@ -342,6 +342,40 @@ export async function getTracksDetails(accessToken, trackIds) {
 }
 
 // ---------------------------------------------------------------------------
+// getPlaylistDetails(accessToken, playlistId)
+// ---------------------------------------------------------------------------
+
+/**
+ * GET /v1/playlists/{id}?fields=name
+ *
+ * Resolves a Spotify playlist ID to display metadata for removal_log rows.
+ * Never throws — playlist names are useful UI metadata, but a lookup failure
+ * should not prevent recording a successful removal.
+ *
+ * @param {string} accessToken  - plaintext Spotify access token
+ * @param {string} playlistId   - Spotify playlist ID
+ * @returns {Promise<{ name: string|null }|null>}
+ */
+export async function getPlaylistDetails(accessToken, playlistId) {
+  if (!playlistId) return null
+
+  const headers = { Authorization: `Bearer ${accessToken}` }
+  const url = `https://api.spotify.com/v1/playlists/${encodeURIComponent(playlistId)}?fields=name`
+
+  try {
+    const response = await getWithRateLimitRetry(url, headers)
+    const name = response?.data?.name
+    return { name: typeof name === 'string' && name.trim() ? name : null }
+  } catch (err) {
+    const status = err?.response?.status
+    console.error(
+      `[spotify] getPlaylistDetails error for playlist ${playlistId}: HTTP ${status ?? 'unknown'} — ${err.message}`
+    )
+    return null
+  }
+}
+
+// ---------------------------------------------------------------------------
 // 3.4  removeTrackFromPlaylist(accessToken, playlistId, trackUri)
 // ---------------------------------------------------------------------------
 

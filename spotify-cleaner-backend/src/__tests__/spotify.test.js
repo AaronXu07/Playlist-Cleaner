@@ -33,6 +33,7 @@ import {
   refreshTokenIfNeeded,
   getCurrentlyPlaying,
   getRecentlyPlayed,
+  getPlaylistDetails,
   removeTrackFromPlaylist,
   addTrackToPlaylist,
   resetSpotifyRateLimitBackoffForTests,
@@ -288,6 +289,50 @@ describe('Property 16: Retry-After wait is capped at 60 s and applied up to 3 ti
     ).rejects.toThrow(/retries exhausted/i)
 
     expect(axios.get).toHaveBeenCalledTimes(3)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Unit tests: getPlaylistDetails
+// ---------------------------------------------------------------------------
+
+describe('Unit tests: getPlaylistDetails', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('returns the playlist display name from Spotify', async () => {
+    axios.get = vi.fn().mockResolvedValue({
+      status: 200,
+      data: { name: 'Road Trip' },
+    })
+
+    const result = await getPlaylistDetails('access-token', 'playlist-1')
+
+    expect(result).toEqual({ name: 'Road Trip' })
+    expect(axios.get).toHaveBeenCalledWith(
+      'https://api.spotify.com/v1/playlists/playlist-1?fields=name',
+      expect.objectContaining({
+        headers: { Authorization: 'Bearer access-token' },
+      })
+    )
+  })
+
+  it('returns null instead of throwing when playlist lookup fails', async () => {
+    const err = Object.assign(new Error('not found'), {
+      response: { status: 404 },
+    })
+    axios.get = vi.fn().mockRejectedValue(err)
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    const result = await getPlaylistDetails('access-token', 'missing-playlist')
+
+    expect(result).toBeNull()
+    expect(errorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('getPlaylistDetails error for playlist missing-playlist')
+    )
+
+    errorSpy.mockRestore()
   })
 })
 

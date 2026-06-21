@@ -90,6 +90,7 @@ const removalRecordArbitrary = fc.record({
   track_name: fc.string({ minLength: 1 }),
   user_id: fc.constant('user-1'),
   playlist_id: fc.string(),
+  playlist_name: fc.option(fc.string({ minLength: 1 }), { nil: undefined }),
   removed_at: fc.date().map((d) => d.toISOString()),
   reason: fc.string(),
 });
@@ -105,7 +106,7 @@ afterEach(() => {
 
 describe('Property 10: Every song row renders all required fields and a correctly labeled re-add button', () => {
   /**
-   * Property 10a: For any RemovalRecord in a list of 1–8 songs, every
+   * Property 10a: For any RemovalRecord in a list of 1–10 songs, every
    * rendered song row must include:
    *   1. An <img width="48" height="48"> (when album_art is present) OR a
    *      placeholder element of equivalent size (w-12 h-12, i.e. 48px)
@@ -120,7 +121,7 @@ describe('Property 10: Every song row renders all required fields and a correctl
     () => {
       fc.assert(
         fc.property(
-          fc.array(removalRecordArbitrary, { minLength: 1, maxLength: 8 }),
+          fc.array(removalRecordArbitrary, { minLength: 1, maxLength: 10 }),
           (songs) => {
             const { container, unmount } = renderPanel(songs);
 
@@ -306,5 +307,92 @@ describe('RemovedSongsPanel unit tests', () => {
       (el) => el.textContent === inlineError
     );
     expect(inlineMatch).not.toBeNull();
+  });
+
+  test('shows 10 removed songs per page before paginating', () => {
+    const songs: RemovalRecord[] = Array.from({ length: 11 }, (_, index) => ({
+      id: `test-id-${index + 1}`,
+      track_id: `track-${index + 1}`,
+      track_name: `Removed Track ${String(index + 1).padStart(2, '0')}`,
+      user_id: 'user-1',
+      playlist_id: 'playlist-1',
+      removed_at: new Date().toISOString(),
+      reason: 'skipped',
+    }));
+
+    const { container } = renderPanel(songs);
+    const allText = container.textContent ?? '';
+
+    expect(allText).toContain('Removed Track 01');
+    expect(allText).toContain('Removed Track 10');
+    expect(allText).not.toContain('Removed Track 11');
+    expect(screen.getByText('Page 1 of 2')).toBeTruthy();
+  });
+
+  test('shows the source playlist for each removed song row', () => {
+    const songs: RemovalRecord[] = [
+      {
+        id: 'test-id-playlist-a',
+        track_id: 'track-shared',
+        track_name: 'Shared Track',
+        artist_name: 'Same Artist',
+        user_id: 'user-1',
+        playlist_id: 'playlist-a',
+        playlist_name: 'Road Trip',
+        removed_at: new Date().toISOString(),
+        reason: 'skipped',
+      },
+      {
+        id: 'test-id-playlist-b',
+        track_id: 'track-shared',
+        track_name: 'Shared Track',
+        artist_name: 'Same Artist',
+        user_id: 'user-1',
+        playlist_id: 'playlist-b',
+        playlist_name: 'Gym Mix',
+        removed_at: new Date().toISOString(),
+        reason: 'skipped',
+      },
+    ];
+
+    renderPanel(songs);
+
+    expect(screen.getByText('From Road Trip • Same Artist')).toBeTruthy();
+    expect(screen.getByText('From Gym Mix • Same Artist')).toBeTruthy();
+  });
+
+  test('caps long song text between the album art and re-add button', () => {
+    const song: RemovalRecord = {
+      id: 'test-id-long-title',
+      track_id: 'track-long-title',
+      track_name: 'Monster (Shawn Mendes & Justin Bieber)',
+      artist_name: 'Shawn Mendes, Justin Bieber',
+      user_id: 'user-1',
+      playlist_id: 'liked-songs',
+      playlist_name: 'Liked Songs',
+      removed_at: new Date().toISOString(),
+      reason: 'skipped',
+    };
+
+    renderPanel([song]);
+
+    const title = screen.getByText('Monster (Shawn Mendes & Justin Bieber)');
+    const description = screen.getByText(
+      'From Liked Songs • Shawn Mendes, Justin Bieber'
+    );
+    const trackInfo = title.parentElement;
+    const row = trackInfo?.parentElement;
+
+    expect(title.className).toContain('truncate');
+    expect(description.className).toContain('truncate');
+    expect(trackInfo?.className).toContain('min-w-0');
+    expect(trackInfo?.className).toContain('overflow-hidden');
+    expect(row?.className).toContain('grid-cols-[3rem_minmax(0,1fr)_2rem]');
+    expect(row?.className).toContain('min-w-0');
+    expect(
+      screen.getByRole('button', {
+        name: 'Re-add Monster (Shawn Mendes & Justin Bieber) to playlist',
+      })
+    ).toBeTruthy();
   });
 });
