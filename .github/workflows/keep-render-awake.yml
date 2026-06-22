@@ -1,0 +1,52 @@
+name: Keep Render Backend Awake
+
+on:
+  schedule:
+    # Render free web services spin down after 15 minutes of no inbound traffic.
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+    inputs:
+      backend_url:
+        description: "Optional backend base URL, for example https://your-app.onrender.com"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: keep-render-backend-awake
+  cancel-in-progress: true
+
+jobs:
+  ping:
+    name: Ping backend health check
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    env:
+      CONFIGURED_BACKEND_URL: ${{ vars.RENDER_BACKEND_URL || secrets.RENDER_BACKEND_URL }}
+      MANUAL_BACKEND_URL: ${{ inputs.backend_url }}
+
+    steps:
+      - name: Ping /health
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          backend_url="${MANUAL_BACKEND_URL:-$CONFIGURED_BACKEND_URL}"
+
+          if [[ -z "$backend_url" ]]; then
+            echo "Set a repository variable or secret named RENDER_BACKEND_URL."
+            echo "Example: https://your-app.onrender.com"
+            exit 1
+          fi
+
+          backend_url="${backend_url%/}"
+          health_url="$backend_url/health"
+
+          echo "Pinging $health_url"
+          curl --fail --silent --show-error \
+            --max-time 75 \
+            --retry 2 \
+            --retry-delay 10 \
+            "$health_url"
