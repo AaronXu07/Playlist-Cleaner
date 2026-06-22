@@ -18,7 +18,8 @@
     "cookie-parser": "^1.4.7",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
-    "jsonwebtoken": "^9.0.3"
+    "jsonwebtoken": "^9.0.3",
+    "ws": "^8.21.0"
   },
   "devDependencies": {
     "fast-check": "^3.22.0",

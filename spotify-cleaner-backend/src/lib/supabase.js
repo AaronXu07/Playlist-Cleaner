@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
+import ws from 'ws'
 
 // Use a lazy getter so the client isn't created until after dotenv has loaded
 let _client = null
@@ -10,7 +11,11 @@ function getSupabase() {
     if (!url || !key) {
       throw new Error('SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set in .env')
     }
-    _client = createClient(url, key)
+    _client = createClient(url, key, {
+      realtime: {
+        transport: ws,
+      },
+    })
   }
   return _client
 }
