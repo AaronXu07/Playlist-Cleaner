@@ -3,7 +3,9 @@ name: Keep Render Backend Awake
 on:
   schedule:
     # Render free web services spin down after 15 minutes of no inbound traffic.
-    - cron: "*/10 * * * *"
+    # GitHub schedules are best-effort; offset from common 0/10/20 minute
+    # boundaries to reduce queueing delays during Actions load spikes.
+    - cron: "3,13,23,33,43,53 * * * *"
   workflow_dispatch:
     inputs:
       backend_url:
@@ -13,10 +15,6 @@ on:
 
 permissions:
   contents: read
-
-concurrency:
-  group: keep-render-backend-awake
-  cancel-in-progress: true
 
 jobs:
   ping:

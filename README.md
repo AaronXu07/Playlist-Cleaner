@@ -166,6 +166,12 @@ NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:3000
 
 For deployment, the frontend can also use `RENDER_BACKEND_URL` so Next.js rewrites `/auth`, `/api`, and `/health` to the hosted backend.
 
+## Keep Render Awake
+
+The repository includes `.github/workflows/keep-render-awake.yml`, which pings `RENDER_BACKEND_URL/health` roughly every 10 minutes. Set `RENDER_BACKEND_URL` as a repository variable or secret with the hosted backend base URL.
+
+GitHub Actions scheduled workflows are best-effort, so they can still run late when Actions is busy. For a production-grade wake-up ping, configure an external cron monitor such as cron-job.org to request `/health` every 10 minutes.
+
 ## Local Development
 
 Install dependencies:
