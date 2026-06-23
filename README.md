@@ -4,6 +4,8 @@ Spotify Playlist Cleaner connects to a Spotify account, watches playlist listeni
 
 The app is split into a Next.js frontend and an Express backend. The backend owns Spotify OAuth, encrypted token storage, polling, skip detection, playlist edits, and removal history.
 
+[Watch Demo](https://youtu.be/4C_RpX8Md7k)
+
 ## Features
 
 - Spotify OAuth sign-in with an httpOnly session cookie.
