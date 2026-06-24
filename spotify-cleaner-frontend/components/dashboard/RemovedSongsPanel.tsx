@@ -120,9 +120,9 @@ export function RemovedSongsPanel({
     if (songs.length === 0) {
       return (
         <p className="text-sm text-muted">
-          No songs removed yet. Start cleaning, then listen to Spotify as usual.
-          You can leave this page while it works, and songs you skip will appear
-          here once they are removed. Turn cleaning off when you are done.
+          <br />No songs removed yet. <br /><br />Start cleaning, then listen to Spotify as usual.
+          <br /><br />You can leave this page while it works, and songs you tend to skip will appear
+          here once they are removed. <br /><br />Turn cleaning off when you are done.
         </p>
       );
     }
