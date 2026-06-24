@@ -65,7 +65,7 @@ The backend mitigates this by:
 - storing display metadata in `removal_log` so dashboard loads do not fan out into Spotify track lookups;
 - using playlist blocklisting for known read-only playlists.
 
-For broader usage, the Spotify app needs extended quota mode. Spotify documents extended quota as removing the development-mode allowlist and providing a higher rate limit.
+For broader usage, the app now supports a bring-your-own Spotify Client ID flow. Each user can create a personal Spotify Developer app, paste only the app's public Client ID into the setup screen, and authenticate through Authorization Code with PKCE. This avoids collecting Client Secrets and lets each user use their own development app quota. Extended quota mode is still the right path for a single shared public Spotify app.
 
 References:
 
@@ -85,6 +85,7 @@ References:
 Create an app in the [Spotify Developer Dashboard](https://developer.spotify.com/dashboard), then configure:
 
 - Redirect URI for local development: `http://127.0.0.1:3000/auth/callback`
+- Redirect URI for the hosted user setup flow: `https://playlist-cleaner-sooty.vercel.app/auth/callback`
 - Development-mode users: add each tester in the app's Users Management tab
 
 The backend requests these scopes:
@@ -121,6 +122,7 @@ Then run the project migrations in order from `spotify-cleaner-backend/migration
 002_polling_enabled.sql
 003_user_profile.sql
 004_removal_metadata.sql
+005_user_spotify_client_id.sql
 ```
 
 The migrations add:
@@ -132,6 +134,7 @@ The migrations add:
 - `users.display_name`
 - `users.avatar_url`
 - removal display metadata columns
+- `users.spotify_client_id` for bring-your-own Spotify app authentication
 
 ## Environment Variables
 
@@ -149,10 +152,6 @@ Create `spotify-cleaner-backend/.env`:
 PORT=3000
 FRONTEND_URL=http://127.0.0.1:5173
 
-SPOTIFY_CLIENT_ID=your_spotify_client_id
-SPOTIFY_CLIENT_SECRET=your_spotify_client_secret
-SPOTIFY_REDIRECT_URI=http://127.0.0.1:3000/auth/callback
-
 SUPABASE_URL=your_supabase_project_url
 SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key
 
@@ -160,13 +159,15 @@ JWT_SECRET=generated_by_the_node_script_above
 ENCRYPTION_KEY=generated_by_the_node_script_above
 ```
 
+`SPOTIFY_CLIENT_ID` and `SPOTIFY_CLIENT_SECRET` are optional now. Keep them only if you still want a shared fallback Spotify app for legacy sign-in. The bring-your-own Client ID flow does not need either value. `SPOTIFY_REDIRECT_URI` is also optional; when it is omitted, the backend defaults to `https://playlist-cleaner-sooty.vercel.app/auth/callback`.
+
 Create `spotify-cleaner-frontend/.env.local`:
 
 ```bash
 NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:3000
 ```
 
-For deployment, the frontend can also use `RENDER_BACKEND_URL` so Next.js rewrites `/auth`, `/api`, and `/health` to the hosted backend.
+For deployment, the frontend can also use `RENDER_BACKEND_URL` so Next.js rewrites `/auth`, `/api`, and `/health` to the hosted backend. The hosted setup screen shows `https://playlist-cleaner-sooty.vercel.app/auth/callback`, and the backend uses that same URI as its default Spotify callback when `SPOTIFY_REDIRECT_URI` is not set.
 
 ## Keep Render Awake
 

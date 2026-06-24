@@ -609,7 +609,7 @@ export async function runPollCycle(userId) {
     // Load user row from Supabase
     const { data: userRows, error: userError } = await supabase
       .from('users')
-      .select('access_token, refresh_token, token_expires_at, last_poll_at, spotify_id')
+      .select('access_token, refresh_token, token_expires_at, last_poll_at, spotify_id, spotify_client_id')
       .eq('id', userId)
       .limit(1)
 
@@ -626,8 +626,12 @@ export async function runPollCycle(userId) {
       const result = await refreshTokenIfNeeded(user)
       accessToken = result.accessToken
     } catch (err) {
-      if (err?.code === 'REVOKED') {
-        console.warn(`[poller] Permissions revoked for user ${userId} — deregistering`)
+      if (err?.code === 'REVOKED' || err?.code === 'REAUTH_REQUIRED') {
+        const reason =
+          err.code === 'REVOKED'
+            ? 'Permissions revoked'
+            : 'Spotify Client ID missing'
+        console.warn(`[poller] ${reason} for user ${userId} — deregistering`)
         await supabase.from('users').update({ refresh_token: null }).eq('id', userId)
         deregisterUser(userId)
         return

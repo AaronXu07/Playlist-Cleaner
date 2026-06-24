@@ -68,7 +68,7 @@ router.delete('/removals/:id', requireAuth, async (req, res) => {
     // Load user tokens from DB.
     const { data: userRows, error: userError } = await supabase
       .from('users')
-      .select('id, access_token, refresh_token, token_expires_at')
+      .select('id, access_token, refresh_token, token_expires_at, spotify_client_id')
       .eq('id', userId)
       .limit(1)
 

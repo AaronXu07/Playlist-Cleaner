@@ -5,7 +5,7 @@ import { test, expect } from '@playwright/test';
  * Validates: Requirements 2.4, 6.1
  */
 test.describe('Full OAuth flow', () => {
-  test('Sign in with Spotify → OAuth redirect → Dashboard renders within 5s', async ({ page }) => {
+  test('setup Client ID → OAuth redirect → Dashboard renders within 5s', async ({ page }) => {
     // Mock the backend auth/me endpoint
     await page.route('**/auth/me', async (route) => {
       await route.fulfill({
@@ -36,21 +36,24 @@ test.describe('Full OAuth flow', () => {
     // Navigate to landing page
     await page.goto('/');
 
-    // Find the "Sign in with Spotify" link
-    const signInLink = page.getByText('Sign in with Spotify');
-    await expect(signInLink).toBeVisible();
+    // Find the setup link and move through the Client ID screen first.
+    const setupLink = page.getByText('Set up Spotify sign in');
+    await expect(setupLink).toBeVisible();
+    await setupLink.click();
+    await page.waitForURL('**/spotify-setup');
 
     // Intercept the navigation to /auth/spotify and redirect to /dashboard instead.
     // This simulates a successful OAuth callback — the backend would normally set the
     // session cookie and redirect to /dashboard.
-    await page.route('**/auth/spotify', async (route) => {
+    await page.route('**/auth/spotify?client_id=*', async (route) => {
       await route.fulfill({
         status: 302,
         headers: { Location: 'http://localhost:3000/dashboard' },
       });
     });
 
-    await signInLink.click();
+    await page.getByRole('textbox', { name: 'Spotify Client ID' }).fill('a'.repeat(32));
+    await page.getByRole('button', { name: 'Continue to Spotify' }).click();
 
     // Wait for dashboard to load (Requirement 2.4: within 5 seconds of redirect)
     await page.waitForURL('**/dashboard', { timeout: 5000 });

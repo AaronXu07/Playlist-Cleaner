@@ -124,8 +124,6 @@ function LandingPageInner() {
     setTimelineHeight(height);
   }, []);
 
-  const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL ?? '';
-
   return (
     /*
      * Scroll container: overflow-y: auto so Framer Motion useScroll can track
@@ -204,7 +202,7 @@ function LandingPageInner() {
           onHeightChange={handleTimelineHeightChange}
           cta={
             <a
-              href={`${apiBase}/auth/spotify`}
+              href="/spotify-setup"
               style={{
                 display: 'inline-block',
                 padding: '16px 40px',
@@ -241,7 +239,7 @@ function LandingPageInner() {
                   'var(--color-brand)';
               }}
             >
-              Sign in with Spotify
+              Set up Spotify sign in
             </a>
           }
         />

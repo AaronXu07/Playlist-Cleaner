@@ -4,7 +4,7 @@
  * Validates: Requirements 2.1, 2.3, 2.5, 2.6, 2.7
  *
  * 1. Page renders without a session cookie (Req 2.1)
- * 2. "Sign in with Spotify" button href contains `/auth/spotify` with NEXT_PUBLIC_API_BASE_URL prepended (Req 2.3)
+ * 2. Landing CTA links to the Spotify setup screen (Req 2.3)
  * 3. `?error=access_denied` query param renders inline `<p role="alert">` error notice (Req 2.5)
  * 4. Heading words "SPOTIFY", "PLAYLIST", "CLEANER" are all present in rendered output (Req 2.6)
  * 5. No emoji Unicode characters in the rendered output (Req 2.7)
@@ -161,27 +161,20 @@ describe('Landing Page behaviour', () => {
   });
 
   /**
-   * Test 2 — "Sign in with Spotify" button href (Req 2.3)
+ * Test 2 — Landing CTA link (Req 2.3)
    *
-   * The link href must include `/auth/spotify` and must prepend
-   * NEXT_PUBLIC_API_BASE_URL (which may be an empty string).
+   * The landing page should send users to the guided setup screen before
+   * starting Spotify OAuth, because the user's Client ID is needed first.
    */
-  test('"Sign in with Spotify" link href contains /auth/spotify with NEXT_PUBLIC_API_BASE_URL prepended', async () => {
+  test('"Set up Spotify sign in" link points to /spotify-setup', async () => {
     const { container } = await renderLandingPage();
 
-    const link = container.querySelector('a[href*="/auth/spotify"]') as HTMLAnchorElement | null;
+    const link = container.querySelector('a[href="/spotify-setup"]') as HTMLAnchorElement | null;
     expect(link).not.toBeNull();
 
     const href = link!.getAttribute('href') ?? '';
-
-    // href must contain "/auth/spotify"
-    expect(href).toContain('/auth/spotify');
-
-    // href must start with NEXT_PUBLIC_API_BASE_URL (empty string is valid —
-    // the requirement says "even if empty string"). In the component the href
-    // is constructed as `${apiBase}/auth/spotify` where apiBase defaults to ''.
-    const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL ?? '';
-    expect(href).toBe(`${apiBase}/auth/spotify`);
+    expect(href).toBe('/spotify-setup');
+    expect(container.textContent ?? '').toContain('Set up Spotify sign in');
   });
 
   /**

@@ -42,6 +42,8 @@ import getSupabase from '../lib/supabase.js'
 
 beforeEach(() => {
   resetSpotifyRateLimitBackoffForTests()
+  process.env.SPOTIFY_CLIENT_ID = 'shared-client-id'
+  process.env.SPOTIFY_CLIENT_SECRET = 'shared-client-secret'
 })
 
 // ---------------------------------------------------------------------------
@@ -349,6 +351,8 @@ describe('Unit tests: refreshTokenIfNeeded', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
+    process.env.SPOTIFY_CLIENT_ID = 'shared-client-id'
+    process.env.SPOTIFY_CLIENT_SECRET = 'shared-client-secret'
 
     // Rebuild the Supabase mock chain so we can inspect calls per-test
     eqMock = vi.fn().mockResolvedValue({ error: null })
@@ -416,6 +420,45 @@ describe('Unit tests: refreshTokenIfNeeded', () => {
 
     expect(updatePayload).toHaveProperty('access_token', 'enc:new-access')
     expect(updatePayload).not.toHaveProperty('refresh_token')
+  })
+
+  it('uses PKCE-style refresh for users with their own Spotify Client ID', async () => {
+    axios.post = vi.fn().mockResolvedValue({
+      data: {
+        access_token: 'new-access',
+        expires_in: 3600,
+      },
+    })
+
+    const user = {
+      ...makeUser(EXPIRY_OFFSET_MS),
+      spotify_client_id: 'a'.repeat(32),
+    }
+
+    await refreshTokenIfNeeded(user)
+
+    expect(axios.post).toHaveBeenCalledOnce()
+    const [, params, config] = axios.post.mock.calls[0]
+
+    expect(params.get('grant_type')).toBe('refresh_token')
+    expect(params.get('refresh_token')).toBe('plaintext-refresh-token')
+    expect(params.get('client_id')).toBe('a'.repeat(32))
+    expect(config.headers).toMatchObject({
+      'Content-Type': 'application/x-www-form-urlencoded',
+    })
+    expect(config.headers.Authorization).toBeUndefined()
+  })
+
+  it('throws REAUTH_REQUIRED when a legacy user has no saved Client ID and no shared credentials exist', async () => {
+    delete process.env.SPOTIFY_CLIENT_ID
+    delete process.env.SPOTIFY_CLIENT_SECRET
+
+    const user = makeUser(EXPIRY_OFFSET_MS)
+
+    await expect(refreshTokenIfNeeded(user)).rejects.toMatchObject({
+      code: 'REAUTH_REQUIRED',
+    })
+    expect(axios.post).not.toHaveBeenCalled()
   })
 
   // -------------------------------------------------------------------------

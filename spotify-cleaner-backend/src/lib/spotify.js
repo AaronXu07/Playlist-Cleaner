@@ -114,7 +114,7 @@ async function getWithRateLimitRetry(url, headers) {
  * Throws with { code: 'REVOKED' } on invalid_grant (permissions revoked).
  * Re-throws any other error as-is.
  *
- * @param {{ id: string, access_token: string, refresh_token: string, token_expires_at: string }} user
+ * @param {{ id: string, access_token: string, refresh_token: string, token_expires_at: string, spotify_client_id?: string | null }} user
  * @returns {Promise<{ accessToken: string }>}
  */
 export async function refreshTokenIfNeeded(user) {
@@ -133,9 +133,24 @@ export async function refreshTokenIfNeeded(user) {
   params.append('grant_type', 'refresh_token')
   params.append('refresh_token', refreshToken)
 
-  const clientId = process.env.SPOTIFY_CLIENT_ID
-  const clientSecret = process.env.SPOTIFY_CLIENT_SECRET
-  const basicAuth = Buffer.from(`${clientId}:${clientSecret}`).toString('base64')
+  const tokenHeaders = {
+    'Content-Type': 'application/x-www-form-urlencoded',
+  }
+
+  if (user.spotify_client_id) {
+    params.append('client_id', user.spotify_client_id)
+  } else {
+    const clientId = process.env.SPOTIFY_CLIENT_ID
+    const clientSecret = process.env.SPOTIFY_CLIENT_SECRET
+
+    if (!clientId || !clientSecret) {
+      const reauthError = new Error('Spotify Client ID required for token refresh')
+      reauthError.code = 'REAUTH_REQUIRED'
+      throw reauthError
+    }
+
+    tokenHeaders.Authorization = `Basic ${Buffer.from(`${clientId}:${clientSecret}`).toString('base64')}`
+  }
 
   let tokenResponse
   try {
@@ -143,10 +158,7 @@ export async function refreshTokenIfNeeded(user) {
       'https://accounts.spotify.com/api/token',
       params,
       {
-        headers: {
-          Authorization: `Basic ${basicAuth}`,
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
+        headers: tokenHeaders,
         timeout: 10_000,
       }
     )
