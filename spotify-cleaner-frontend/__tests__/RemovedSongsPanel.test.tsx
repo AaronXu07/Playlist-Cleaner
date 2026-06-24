@@ -252,7 +252,9 @@ describe('RemovedSongsPanel unit tests', () => {
     renderPanel([]);
 
     expect(
-      screen.getByText('No songs removed yet — start a clean to see results here.')
+      screen.getByText(
+        'No songs removed yet. Start cleaning, then listen to Spotify as usual. You can leave this page while it works, and songs you skip will appear here once they are removed. Turn cleaning off when you are done.'
+      )
     ).toBeTruthy();
   });
 
